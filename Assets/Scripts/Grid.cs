@@ -1,3 +1,4 @@
+using System.Collections;
 using System.Collections.Generic;
 using UnityEngine;
 
@@ -24,6 +25,11 @@ public class Grid
 
     public enum Direction { North, South, East, West }
 
+    // Add these event callbacks at the top of your Grid class
+    public System.Action<int, int> OnCellVisited;
+    public System.Action<int, int, int, int> OnWallRemoved;
+    public System.Action<int, int> OnBacktrack;
+    public System.Action<int, int> OnCellReturned;
 
     public Grid(int rows, int column, float cellSize)
     {
@@ -42,9 +48,51 @@ public class Grid
 
             }
         }
+    }
 
+    // Add this new coroutine method for animated generation
+    public IEnumerator GenerateMazeAnimated(int startX, int startY, float delayBetweenSteps = 0.01f)
+    {
+        if (startX < 0 || startX >= rows || startY < 0 || startY >= column) yield break;
+        yield return CarvePathAnimated(startX, startY, delayBetweenSteps);
+    }
 
-        GenerateMaze(0, 0);
+    // Add this new coroutine version of CarvePath
+    private IEnumerator CarvePathAnimated(int x, int y, float delayBetweenSteps)
+    {
+        Cell currentCell = GetCell(x, y);
+        if (currentCell == null) yield break;
+        currentCell.visited = true;
+
+        // Notify visualization system
+        OnCellVisited?.Invoke(x, y);
+        yield return new WaitForSeconds(delayBetweenSteps);
+
+        List<Neighbor> neighbors = GetUnvisitedNeighbors(x, y);
+        neighbors.Shuffle();
+
+        foreach (var neighbor in neighbors)
+        {
+            Cell neighborCell = GetCell(neighbor.X, neighbor.Y);
+
+            if (neighborCell != null && !neighborCell.visited)
+            {
+                RemoveWall(currentCell, neighborCell, neighbor.Direction);
+
+                // Notify visualization system about wall removal
+                OnWallRemoved?.Invoke(x, y, neighbor.X, neighbor.Y);
+                yield return new WaitForSeconds(delayBetweenSteps);
+
+                // Recurse to the neighbor
+                yield return CarvePathAnimated(neighbor.X, neighbor.Y, delayBetweenSteps);
+
+                // ? NEW: Show we've returned to this cell
+                OnCellReturned?.Invoke(x, y);
+                yield return new WaitForSeconds(delayBetweenSteps * 0.5f);
+            }
+        }
+        // Backtracking notification
+        OnBacktrack?.Invoke(x, y);
     }
 
     public Vector3 GetWorldPosition(int x, int y)
@@ -58,7 +106,6 @@ public class Grid
         if (x >= 0 && x < rows && y >= 0 && y < column)
         {
             return cellArray[x, y];
-
         }
         return null;
     }
